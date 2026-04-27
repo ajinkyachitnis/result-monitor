@@ -1,0 +1,31 @@
+name: Result Monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run script
+        run: python monitor.py
+
+      - name: Commit state
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@github.com"
+          git add state.json
+          git commit -m "update state" || echo "no changes"
+          git push
