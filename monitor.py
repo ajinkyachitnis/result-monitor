@@ -9,7 +9,7 @@ STATE_FILE = "state.json"
 SEAT_NO = "T089759"
 
 PAYLOAD = {
-    "mother": "MANISHA"
+    "mother": "MANISHA"   # ⚠️ MUST match EXACT record
 }
 
 HEADERS = {
@@ -21,8 +21,8 @@ HEADERS = {
 
 END_DATE = datetime(2026, 5, 27, tzinfo=timezone.utc)
 
-# 🔥 TEMP: set True to test WhatsApp immediately
-FORCE_SEND = False
+# 🔥 TEMP: set True to test WhatsApp
+FORCE_SEND = True
 
 
 # ---------- STATE ----------
@@ -39,7 +39,7 @@ def save_state(state):
 # ---------- WHATSAPP ----------
 def send_whatsapp(msg):
     try:
-        print("Sending WhatsApp...")
+        print("📤 Sending WhatsApp...")
 
         sid = os.environ.get("TWILIO_SID")
         token = os.environ.get("TWILIO_TOKEN")
@@ -56,7 +56,7 @@ def send_whatsapp(msg):
             to=to
         )
 
-        print("Message sent, SID:", message.sid)
+        print("✅ Message sent, SID:", message.sid)
 
     except Exception as e:
         print("❌ Twilio error:", e)
@@ -121,7 +121,7 @@ def check_all_parallel():
 # ---------- MAIN ----------
 def main():
     if datetime.now(timezone.utc) > END_DATE:
-        print("Expired")
+        print("⛔ Expired")
         return
 
     state = load_state()
@@ -131,7 +131,7 @@ def main():
 
     print("Prev:", prev, "| Current:", current)
 
-    # 🔥 FORCE TEST MODE
+    # 🔥 FORCE TEST MODE (for debugging Twilio)
     if FORCE_SEND:
         send_whatsapp("✅ Test message from GitHub Actions")
     else:
