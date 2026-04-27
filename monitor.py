@@ -2,6 +2,7 @@ import requests
 import json
 import os
 from datetime import datetime
+from twilio.rest import Client
 
 STATE_FILE = "state.json"
 
@@ -17,8 +18,6 @@ HEADERS = {
     "Origin": "https://hscresult.mahahsscboard.in",
     "Referer": "https://hscresult.mahahsscboard.in/"
 }
-
-POST_URL = "https://your-api.com/notify"
 
 END_DATE = datetime(2026, 5, 27)
 
@@ -54,33 +53,36 @@ def check_service():
         return "DOWN"
 
 
-def trigger_post():
-    payload = {
-        "event": "RESULT_AVAILABLE",
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-    try:
-        r = requests.post(POST_URL, json=payload, timeout=5)
-        print("Triggered POST:", r.status_code)
-    except Exception as e:
-        print("POST failed:", e)
+def send_whatsapp(msg):
+    client = Client(
+        os.environ["TWILIO_SID"],
+        os.environ["TWILIO_TOKEN"]
+    )
+    client.messages.create(
+        body=msg,
+        from_="whatsapp:+14155238886",
+        to=os.environ["TO_WHATSAPP"]
+    )
 
 
 def main():
     if is_expired():
-        print("Expired")
         return
 
-    prev = load_state()["status"]
+    state = load_state()
+    prev = state.get("status", "UNKNOWN")
+
     current = check_service()
 
     print("Prev:", prev, "Current:", current)
 
     if prev in ["DOWN", "UNKNOWN"] and current == "UP":
-        trigger_post()
+        send_whatsapp("🎉 RESULT IS OUT!")
 
-    save_state({"status": current})
+    save_state({
+        "status": current,
+        "last_run": datetime.utcnow().isoformat()
+    })
 
 
 if __name__ == "__main__":
