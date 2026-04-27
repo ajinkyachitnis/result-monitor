@@ -2,15 +2,13 @@ import requests
 import json
 import os
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from twilio.rest import Client
 
 STATE_FILE = "state.json"
+SEAT_NO = "T089759"
 
-URL = "https://hscresult-8.mahahsscboard.in/api/result/getResult/T089759"
-
-PAYLOAD = {
-    "mother": "MANISHA"
-}
+PAYLOAD = {"mother": "MANISHA"}
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -22,10 +20,7 @@ HEADERS = {
 END_DATE = datetime(2026, 5, 27)
 
 
-def is_expired():
-    return datetime.utcnow() > END_DATE
-
-
+# ---------- STATE ----------
 def load_state():
     if not os.path.exists(STATE_FILE):
         return {"status": "UNKNOWN"}
@@ -36,23 +31,7 @@ def save_state(state):
     json.dump(state, open(STATE_FILE, "w"))
 
 
-def check_service():
-    try:
-        r = requests.post(URL, json=PAYLOAD, headers=HEADERS, timeout=10)
-        data = r.json()
-
-        print("Response:", data)
-
-        if data and data.get("error") != -1:
-            return "UP"
-
-        return "DOWN"
-
-    except Exception as e:
-        print("Error:", e)
-        return "DOWN"
-
-
+# ---------- WHATSAPP ----------
 def send_whatsapp(msg):
     client = Client(
         os.environ["TWILIO_SID"],
@@ -65,19 +44,72 @@ def send_whatsapp(msg):
     )
 
 
+# ---------- FORMAT ----------
+def format_result_message(data, url):
+    try:
+        return (
+            f"🎉 RESULT FOUND!\n\n"
+            f"Name: {data.get('name','N/A')}\n"
+            f"Seat: {data.get('seatNo', SEAT_NO)}\n"
+            f"Total: {data.get('total','N/A')}\n\n"
+            f"Source: {url}"
+        )
+    except:
+        return f"🎉 RESULT FOUND!\n\nRaw: {str(data)[:500]}"
+
+
+# ---------- CORE ----------
+def hit_endpoint(i):
+    url = f"https://hscresult-{i}.mahahsscboard.in/api/result/getResult/{SEAT_NO}"
+    try:
+        r = requests.post(url, json=PAYLOAD, headers=HEADERS, timeout=5)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            if data and data.get("error") != -1:
+                return True, data, url
+
+    except Exception as e:
+        print(f"Server {i} failed:", e)
+
+    return False, None, url
+
+
+def check_all_parallel():
+    with ThreadPoolExecutor(max_workers=9) as executor:
+        futures = [executor.submit(hit_endpoint, i) for i in range(1, 10)]
+
+        for future in as_completed(futures):
+            success, data, url = future.result()
+
+            if success:
+                print("SUCCESS:", url)
+
+                # cancel remaining
+                for f in futures:
+                    if not f.done():
+                        f.cancel()
+
+                return "UP", data, url
+
+    return "DOWN", None, None
+
+
+# ---------- MAIN ----------
 def main():
-    if is_expired():
+    if datetime.utcnow() > END_DATE:
         return
 
     state = load_state()
     prev = state.get("status", "UNKNOWN")
 
-    current = check_service()
+    current, data, url = check_all_parallel()
 
     print("Prev:", prev, "Current:", current)
 
     if prev in ["DOWN", "UNKNOWN"] and current == "UP":
-        send_whatsapp("🎉 RESULT IS OUT!")
+        send_whatsapp(format_result_message(data, url))
 
     save_state({
         "status": current,
