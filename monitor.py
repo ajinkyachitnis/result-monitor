@@ -9,7 +9,7 @@ STATE_FILE = "state.json"
 SEAT_NO = "T089759"
 
 PAYLOAD = {
-    "mother": "MANISHA"   # ⚠️ MUST match EXACT record
+    "mother": "MANISHA"   # ⚠️ MUST be correct
 }
 
 HEADERS = {
@@ -20,9 +20,6 @@ HEADERS = {
 }
 
 END_DATE = datetime(2026, 5, 27, tzinfo=timezone.utc)
-
-# 🔥 TEMP: set True to test WhatsApp
-FORCE_SEND = True
 
 
 # ---------- STATE ----------
@@ -38,45 +35,32 @@ def save_state(state):
 
 # ---------- WHATSAPP ----------
 def send_whatsapp(msg):
-    try:
-        print("📤 Sending WhatsApp...")
+    client = Client(
+        os.environ["TWILIO_SID"],
+        os.environ["TWILIO_TOKEN"]
+    )
 
-        sid = os.environ.get("TWILIO_SID")
-        token = os.environ.get("TWILIO_TOKEN")
-        to = os.environ.get("TO_WHATSAPP")
+    message = client.messages.create(
+        body=msg,
+        from_="whatsapp:+14155238886",
+        to=os.environ["TO_WHATSAPP"]
+    )
 
-        print("SID present:", bool(sid))
-        print("TO:", to)
-
-        client = Client(sid, token)
-
-        message = client.messages.create(
-            body=msg,
-            from_="whatsapp:+14155238886",
-            to=to
-        )
-
-        print("✅ Message sent, SID:", message.sid)
-
-    except Exception as e:
-        print("❌ Twilio error:", e)
+    print("Message sent:", message.sid)
 
 
-# ---------- FORMAT ----------
-def format_result_message(data, url):
-    try:
-        return (
-            f"🎉 RESULT FOUND!\n\n"
-            f"Name: {data.get('name','N/A')}\n"
-            f"Seat: {data.get('seatNo', SEAT_NO)}\n"
-            f"Total: {data.get('total','N/A')}\n\n"
-            f"Source: {url}"
-        )
-    except:
-        return f"🎉 RESULT FOUND!\n\nRaw: {str(data)[:500]}"
+# ---------- FORMAT RESPONSE ----------
+def format_full_response(data, url):
+    return f"""🎉 RESULT FOUND
+
+Source: {url}
+
+Full Response:
+{json.dumps(data, indent=2)[:1500]}
+"""
 
 
-# ---------- CORE ----------
+# ---------- API HIT ----------
 def hit_endpoint(i):
     url = f"https://hscresult-{i}.mahahsscboard.in/api/result/getResult/{SEAT_NO}"
 
@@ -98,6 +82,7 @@ def hit_endpoint(i):
     return False, None, url
 
 
+# ---------- PARALLEL CHECK ----------
 def check_all_parallel():
     with ThreadPoolExecutor(max_workers=9) as executor:
         futures = [executor.submit(hit_endpoint, i) for i in range(1, 10)]
@@ -106,7 +91,7 @@ def check_all_parallel():
             success, data, url = future.result()
 
             if success:
-                print("✅ SUCCESS from:", url)
+                print("SUCCESS:", url)
 
                 # cancel remaining
                 for f in futures:
@@ -121,7 +106,6 @@ def check_all_parallel():
 # ---------- MAIN ----------
 def main():
     if datetime.now(timezone.utc) > END_DATE:
-        print("⛔ Expired")
         return
 
     state = load_state()
@@ -131,13 +115,10 @@ def main():
 
     print("Prev:", prev, "| Current:", current)
 
-    # 🔥 FORCE TEST MODE (for debugging Twilio)
-    if FORCE_SEND:
-        send_whatsapp("✅ Test message from GitHub Actions")
-    else:
-        if prev in ["DOWN", "UNKNOWN"] and current == "UP":
-            msg = format_result_message(data, url)
-            send_whatsapp(msg)
+    # ✅ Trigger only once
+    if true:
+        message = format_full_response(data, url)
+        send_whatsapp(message)
 
     save_state({
         "status": current,
