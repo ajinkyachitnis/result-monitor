@@ -1,14 +1,16 @@
 import requests
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from twilio.rest import Client
 
 STATE_FILE = "state.json"
 SEAT_NO = "T089759"
 
-PAYLOAD = {"mother": "MANISHA TOPARE"}
+PAYLOAD = {
+    "mother": "MANISHA"
+}
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -17,7 +19,10 @@ HEADERS = {
     "Referer": "https://hscresult.mahahsscboard.in/"
 }
 
-END_DATE = datetime(2026, 5, 27)
+END_DATE = datetime(2026, 5, 27, tzinfo=timezone.utc)
+
+# 🔥 TEMP: set True to test WhatsApp immediately
+FORCE_SEND = False
 
 
 # ---------- STATE ----------
@@ -33,15 +38,28 @@ def save_state(state):
 
 # ---------- WHATSAPP ----------
 def send_whatsapp(msg):
-    client = Client(
-        os.environ["TWILIO_SID"],
-        os.environ["TWILIO_TOKEN"]
-    )
-    client.messages.create(
-        body=msg,
-        from_="whatsapp:+14155238886",
-        to=os.environ["TO_WHATSAPP"]
-    )
+    try:
+        print("Sending WhatsApp...")
+
+        sid = os.environ.get("TWILIO_SID")
+        token = os.environ.get("TWILIO_TOKEN")
+        to = os.environ.get("TO_WHATSAPP")
+
+        print("SID present:", bool(sid))
+        print("TO:", to)
+
+        client = Client(sid, token)
+
+        message = client.messages.create(
+            body=msg,
+            from_="whatsapp:+14155238886",
+            to=to
+        )
+
+        print("Message sent, SID:", message.sid)
+
+    except Exception as e:
+        print("❌ Twilio error:", e)
 
 
 # ---------- FORMAT ----------
@@ -61,17 +79,21 @@ def format_result_message(data, url):
 # ---------- CORE ----------
 def hit_endpoint(i):
     url = f"https://hscresult-{i}.mahahsscboard.in/api/result/getResult/{SEAT_NO}"
+
     try:
         r = requests.post(url, json=PAYLOAD, headers=HEADERS, timeout=5)
 
+        print(f"[{i}] Status:", r.status_code)
+
         if r.status_code == 200:
             data = r.json()
+            print(f"[{i}] Response:", data)
 
             if data and data.get("error") != -1:
                 return True, data, url
 
     except Exception as e:
-        print(f"Server {i} failed:", e)
+        print(f"[{i}] Failed:", e)
 
     return False, None, url
 
@@ -84,7 +106,7 @@ def check_all_parallel():
             success, data, url = future.result()
 
             if success:
-                print("SUCCESS:", url)
+                print("✅ SUCCESS from:", url)
 
                 # cancel remaining
                 for f in futures:
@@ -98,7 +120,8 @@ def check_all_parallel():
 
 # ---------- MAIN ----------
 def main():
-    if datetime.utcnow() > END_DATE:
+    if datetime.now(timezone.utc) > END_DATE:
+        print("Expired")
         return
 
     state = load_state()
@@ -106,14 +129,19 @@ def main():
 
     current, data, url = check_all_parallel()
 
-    print("Prev:", prev, "Current:", current)
+    print("Prev:", prev, "| Current:", current)
 
-    if True:
-        send_whatsapp(format_result_message(data, url))
+    # 🔥 FORCE TEST MODE
+    if FORCE_SEND:
+        send_whatsapp("✅ Test message from GitHub Actions")
+    else:
+        if prev in ["DOWN", "UNKNOWN"] and current == "UP":
+            msg = format_result_message(data, url)
+            send_whatsapp(msg)
 
     save_state({
         "status": current,
-        "last_run": datetime.utcnow().isoformat()
+        "last_run": datetime.now(timezone.utc).isoformat()
     })
 
 
