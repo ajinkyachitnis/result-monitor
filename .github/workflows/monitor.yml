@@ -1,6 +1,5 @@
 name: Result Monitor
 
-
 on:
   schedule:
     - cron: "*/5 * * * *"   # runs every 5 minutes
@@ -50,3 +49,4 @@ jobs:
           git pull --rebase origin main || echo "rebase failed"
 
           git push || echo "push skipped"
+
