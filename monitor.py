@@ -9,7 +9,7 @@ STATE_FILE = "state.json"
 SEAT_NO = "T089759"
 
 PAYLOAD = {
-    "mother": "MANISHA"   # ⚠️ MUST be correct
+    "mother": "MANISHA"   # must match exactly
 }
 
 HEADERS = {
@@ -49,14 +49,25 @@ def send_whatsapp(msg):
     print("Message sent:", message.sid)
 
 
-# ---------- FORMAT RESPONSE ----------
-def format_full_response(data, url):
-    return f"""🎉 RESULT FOUND
+# ---------- MESSAGE FORMATS ----------
+def format_up_message(data, url):
+    return f"""🎉 RESULT AVAILABLE
 
+Seat: {SEAT_NO}
 Source: {url}
 
-Full Response:
-{json.dumps(data, indent=2)[:1500]}
+Response:
+{json.dumps(data, indent=2)[:1200]}
+"""
+
+
+def format_down_message():
+    return f"""⏳ RESULT NOT AVAILABLE
+
+Seat: {SEAT_NO}
+Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+
+Status: Still waiting...
 """
 
 
@@ -67,11 +78,8 @@ def hit_endpoint(i):
     try:
         r = requests.post(url, json=PAYLOAD, headers=HEADERS, timeout=5)
 
-        print(f"[{i}] Status:", r.status_code)
-
         if r.status_code == 200:
             data = r.json()
-            print(f"[{i}] Response:", data)
 
             if data and data.get("error") != -1:
                 return True, data, url
@@ -91,8 +99,6 @@ def check_all_parallel():
             success, data, url = future.result()
 
             if success:
-                print("SUCCESS:", url)
-
                 # cancel remaining
                 for f in futures:
                     if not f.done():
@@ -115,10 +121,16 @@ def main():
 
     print("Prev:", prev, "| Current:", current)
 
-    # ✅ Trigger only once
-    if True:
-        message = format_full_response(data, url)
-        send_whatsapp(message)
+    # 🔥 Send only on state change (prevents spam)
+    if current != prev:
+
+        if current == "UP":
+            msg = format_up_message(data, url)
+            send_whatsapp(msg)
+
+        elif current == "DOWN":
+            msg = format_down_message()
+            send_whatsapp(msg)
 
     save_state({
         "status": current,
