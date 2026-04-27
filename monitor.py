@@ -108,7 +108,7 @@ def main():
 
     print("Prev:", prev, "Current:", current)
 
-    if prev in ["DOWN", "UNKNOWN"] and current == "UP":
+    if True:
         send_whatsapp(format_result_message(data, url))
 
     save_state({
