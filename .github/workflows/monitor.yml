@@ -2,8 +2,7 @@ name: Result Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes
-    - cron: "30 1 * * *"    # 7:00 AM IST (UTC 1:30)
+    - cron: "*/5 * * * *"   # runs every 5 minutes
   workflow_dispatch:
 
 jobs:
@@ -22,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 🔥 Always run monitor (handles logic internally)
+      # 🔥 Always run monitor
       - name: Run monitor
         env:
           TWILIO_SID: ${{ secrets.TWILIO_SID }}
@@ -30,7 +29,7 @@ jobs:
           TO_WHATSAPP: ${{ secrets.TO_WHATSAPP }}
         run: python monitor.py
 
-      # 🔥 Always run heartbeat (script can decide behavior if needed)
+      # 🔥 Always run heartbeat (internally controlled)
       - name: Run heartbeat
         env:
           TWILIO_SID: ${{ secrets.TWILIO_SID }}
@@ -38,7 +37,7 @@ jobs:
           TO_WHATSAPP: ${{ secrets.TO_WHATSAPP }}
         run: python heartbeat.py
 
-      # ✅ Safe commit (handles concurrent runs)
+      # ✅ Safe commit (handles concurrency)
       - name: Commit state
         run: |
           git config user.name "github-actions"
