@@ -116,7 +116,7 @@ def main():
     print("Prev:", prev, "| Current:", current)
 
     # ✅ Trigger only once
-    if true:
+    if True:
         message = format_full_response(data, url)
         send_whatsapp(message)
 
