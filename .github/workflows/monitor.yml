@@ -2,8 +2,10 @@ name: Result Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # runs every 5 minutes
+    - cron: "*/5 * * * *"
   workflow_dispatch:
+  repository_dispatch:
+    types: [external-trigger]
 
 jobs:
   monitor:
