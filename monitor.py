@@ -13,7 +13,6 @@ logging.basicConfig(
 )
 
 # ---------- CONFIG ----------
-STATE_FILE = "state.json"
 SEAT_NO = "T089759"
 
 PAYLOAD = {
@@ -26,19 +25,6 @@ HEADERS = {
     "Origin": "https://hscresult.mahahsscboard.in",
     "Referer": "https://hscresult.mahahsscboard.in/"
 }
-
-END_DATE = datetime(2026, 5, 27, tzinfo=timezone.utc)
-
-
-# ---------- STATE ----------
-def load_state():
-    if not os.path.exists(STATE_FILE):
-        return {"status": "UNKNOWN"}
-    return json.load(open(STATE_FILE))
-
-
-def save_state(state):
-    json.dump(state, open(STATE_FILE, "w"))
 
 
 # ---------- WHATSAPP ----------
@@ -68,74 +54,57 @@ def hit_endpoint(i):
 
     try:
         r = requests.post(url, json=PAYLOAD, headers=HEADERS, timeout=5)
-        status = r.status_code
-        logging.info(f"[{i}] Status: {status}")
+        logging.info(f"[{i}] Status: {r.status_code}")
 
-        try:
-            data = r.json()
-        except:
-            data = {"raw": r.text[:300]}
+        if r.status_code != 503:
+            try:
+                data = r.json()
+            except:
+                data = {"raw": r.text[:300]}
 
-        return status, data, url
+            return "UP", data, url
+        else:
+            return "DOWN", None, url
 
     except Exception as e:
         logging.error(f"[{i}] Exception: {e}")
-        return 599, None, url  # treat as server failure
+        return "DOWN", None, url
 
 
-# ---------- PRIORITY CHECK ----------
+# ---------- PARALLEL CHECK ----------
 def check_all_parallel():
-    results = []
-
     with ThreadPoolExecutor(max_workers=9) as executor:
         futures = [executor.submit(hit_endpoint, i) for i in range(1, 10)]
 
         for future in as_completed(futures):
             status, data, url = future.result()
-            results.append((status, data, url))
 
-    # 🔥 PRIORITY LOGIC
+            if status == "UP":
+                # cancel remaining
+                for f in futures:
+                    if not f.done():
+                        f.cancel()
 
-    # 1️⃣ Prefer 200
-    for status, data, url in results:
-        if status == 200:
-            logging.info(f"Selected 200 from {url}")
-            return "UP", status, data, url
+                return "UP", data, url
 
-    # 2️⃣ Prefer 400
-    for status, data, url in results:
-        if status == 400:
-            logging.info(f"Selected 400 from {url}")
-            return "UP", status, data, url
-
-    # 3️⃣ Any non-5xx
-    for status, data, url in results:
-        if status < 500:
-            logging.info(f"Selected fallback {status} from {url}")
-            return "UP", status, data, url
-
-    # 4️⃣ All failed
-    logging.info("All endpoints failed (5xx)")
-    return "DOWN", None, None, None
+    return "DOWN", None, None
 
 
 # ---------- MESSAGE FORMAT ----------
-def format_up_message(status, data, url):
+def format_up_message(data, url):
     return f"""🟢 SERVICE UP
 
-Status: {status}
 URL: {url}
 Seat: {SEAT_NO}
 
 Response:
-{json.dumps(data, indent=2)[:1200]}
+{json.dumps(data, indent=2)[:1000]}
 """
 
 
 def format_down_message():
-    return f"""🔴 SERVICE DOWN
+    return f"""🔴 SERVICE DOWN (503)
 
-All servers returned 5xx
 Seat: {SEAT_NO}
 Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 """
@@ -145,36 +114,15 @@ Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 def main():
     logging.info("===== SCRIPT START =====")
 
-    now = datetime.now(timezone.utc)
-
-    if now > END_DATE:
-        logging.info("Expired. Exiting.")
-        return
-
-    state = load_state()
-    prev = state.get("status", "UNKNOWN")
-
-    logging.info(f"Previous state: {prev}")
-
-    current, status, data, url = check_all_parallel()
+    current, data, url = check_all_parallel()
 
     logging.info(f"Current state: {current}")
 
-    # 🔥 SEND ONLY ON CHANGE
-    if current != prev:
-        logging.info(f"State change: {prev} → {current}")
-
-        if current == "UP":
-            send_whatsapp(format_up_message(status, data, url))
-        else:
-            send_whatsapp(format_down_message())
+    # 🔥 ALWAYS SEND (no state check)
+    if current == "UP":
+        send_whatsapp(format_up_message(data, url))
     else:
-        logging.info("No state change. No message sent.")
-
-    save_state({
-        "status": current,
-        "last_run": now.isoformat()
-    })
+        send_whatsapp(format_down_message())
 
     logging.info("===== SCRIPT END =====")
 
