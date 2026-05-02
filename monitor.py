@@ -130,8 +130,39 @@ Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 
 # ---------- MAIN ----------
 def main():
-    send_whatsapp("✅ TEST: WhatsApp from GitHub Actions is working")
-   
+    logging.info("===== SCRIPT START =====")
+
+    now = datetime.now(timezone.utc)
+
+    if now > END_DATE:
+        logging.info("Expired. Exiting.")
+        return
+
+    state = load_state()
+    prev = state.get("status", "UNKNOWN")
+
+    logging.info(f"Previous state: {prev}")
+
+    current, data, url = check_all_parallel()
+
+    logging.info(f"Current state: {current}")
+
+    # 🔥 SEND ONLY ON CHANGE (avoid spam)
+    if current != prev:
+        logging.info(f"State change: {prev} → {current}")
+
+        if current == "UP":
+            send_whatsapp(format_up_message(data, url))
+        else:
+            send_whatsapp(format_down_message())
+    else:
+        logging.info("No state change. No message sent.")
+
+    save_state({
+        "status": current,
+        "last_run": now.isoformat()
+    })
+
     logging.info("===== SCRIPT END =====")
 
 
