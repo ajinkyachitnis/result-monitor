@@ -68,50 +68,62 @@ def hit_endpoint(i):
 
     try:
         r = requests.post(url, json=PAYLOAD, headers=HEADERS, timeout=5)
-        logging.info(f"[{i}] Status: {r.status_code}")
+        status = r.status_code
+        logging.info(f"[{i}] Status: {status}")
 
-        # 🔥 CORE LOGIC
-        if r.status_code != 503:
-            try:
-                data = r.json()
-            except:
-                data = {"raw": r.text[:300]}
+        try:
+            data = r.json()
+        except:
+            data = {"raw": r.text[:300]}
 
-            logging.info(f"[{i}] UP (non-503)")
-            return "UP", data, url
-
-        else:
-            logging.info(f"[{i}] DOWN (503)")
-            return "DOWN", None, url
+        return status, data, url
 
     except Exception as e:
         logging.error(f"[{i}] Exception: {e}")
-        return "DOWN", None, url
+        return 599, None, url  # treat as server failure
 
 
-# ---------- PARALLEL CHECK ----------
+# ---------- PRIORITY CHECK ----------
 def check_all_parallel():
+    results = []
+
     with ThreadPoolExecutor(max_workers=9) as executor:
         futures = [executor.submit(hit_endpoint, i) for i in range(1, 10)]
 
         for future in as_completed(futures):
             status, data, url = future.result()
+            results.append((status, data, url))
 
-            if status == "UP":
-                # cancel remaining
-                for f in futures:
-                    if not f.done():
-                        f.cancel()
+    # 🔥 PRIORITY LOGIC
 
-                return "UP", data, url
+    # 1️⃣ Prefer 200
+    for status, data, url in results:
+        if status == 200:
+            logging.info(f"Selected 200 from {url}")
+            return "UP", status, data, url
 
-    return "DOWN", None, None
+    # 2️⃣ Prefer 400
+    for status, data, url in results:
+        if status == 400:
+            logging.info(f"Selected 400 from {url}")
+            return "UP", status, data, url
+
+    # 3️⃣ Any non-5xx
+    for status, data, url in results:
+        if status < 500:
+            logging.info(f"Selected fallback {status} from {url}")
+            return "UP", status, data, url
+
+    # 4️⃣ All failed
+    logging.info("All endpoints failed (5xx)")
+    return "DOWN", None, None, None
 
 
 # ---------- MESSAGE FORMAT ----------
-def format_up_message(data, url):
+def format_up_message(status, data, url):
     return f"""🟢 SERVICE UP
 
+Status: {status}
 URL: {url}
 Seat: {SEAT_NO}
 
@@ -121,8 +133,9 @@ Response:
 
 
 def format_down_message():
-    return f"""🔴 SERVICE DOWN (503)
+    return f"""🔴 SERVICE DOWN
 
+All servers returned 5xx
 Seat: {SEAT_NO}
 Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 """
@@ -143,16 +156,16 @@ def main():
 
     logging.info(f"Previous state: {prev}")
 
-    current, data, url = check_all_parallel()
+    current, status, data, url = check_all_parallel()
 
     logging.info(f"Current state: {current}")
 
-    # 🔥 SEND ONLY ON CHANGE (avoid spam)
+    # 🔥 SEND ONLY ON CHANGE
     if current != prev:
         logging.info(f"State change: {prev} → {current}")
 
         if current == "UP":
-            send_whatsapp(format_up_message(data, url))
+            send_whatsapp(format_up_message(status, data, url))
         else:
             send_whatsapp(format_down_message())
     else:
